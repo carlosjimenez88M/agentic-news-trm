@@ -1,0 +1,130 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  code-quality:
+    name: Code Quality Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install radon pylint flake8 mccabe
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+    
+    - name: Calculate code complexity
+      run: |
+        if find . -name "*.py" -not -path "./.venv/*" -not -path "./venv/*" | grep -q .; then
+          echo "=== Cyclomatic Complexity ==="
+          radon cc . -a -nb || true
+          echo ""
+          echo "=== Maintainability Index ==="
+          radon mi . -nb || true
+          echo ""
+          echo "=== Raw Metrics ==="
+          radon raw . -s || true
+        else
+          echo "No Python files found yet"
+        fi
+    
+    - name: Run Pylint
+      run: |
+        if find . -name "*.py" -not -path "./.venv/*" -not -path "./venv/*" | grep -q .; then
+          pylint **/*.py --exit-zero --output-format=text || true
+        else
+          echo "No Python files found yet"
+        fi
+    
+    - name: Run Flake8
+      run: |
+        if find . -name "*.py" -not -path "./.venv/*" -not -path "./venv/*" | grep -q .; then
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics || true
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics || true
+        else
+          echo "No Python files found yet"
+        fi
+
+  documentation-check:
+    name: Documentation Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install interrogate pydocstyle
+    
+    - name: Check docstring coverage
+      run: |
+        if find . -name "*.py" -not -path "./.venv/*" -not -path "./venv/*" | grep -q .; then
+          interrogate -v . || true
+        else
+          echo "No Python files found yet"
+        fi
+    
+    - name: Check docstring style
+      run: |
+        if find . -name "*.py" -not -path "./.venv/*" -not -path "./venv/*" | grep -q .; then
+          pydocstyle . || true
+        else
+          echo "No Python files found yet"
+        fi
+
+  dependency-graph:
+    name: Generate Dependency Graph
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pipdeptree
+    
+    - name: Generate dependency tree
+      run: |
+        if [ -f requirements.txt ]; then
+          pip install -r requirements.txt
+          pipdeptree --json-tree > dependency-tree.json || true
+          pipdeptree || true
+        else
+          echo "No requirements.txt found yet"
+        fi
+    
+    - name: Upload dependency tree
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: dependency-tree
+        path: dependency-tree.json
+        retention-days: 30

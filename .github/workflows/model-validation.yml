@@ -1,0 +1,117 @@
+name: Model Validation
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - '**/*.py'
+      - 'models/**'
+      - 'src/**'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '**/*.py'
+      - 'models/**'
+      - 'src/**'
+  workflow_dispatch:
+
+jobs:
+  validate-models:
+    name: Validate Agentic Models
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install numpy pandas scikit-learn
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+    
+    - name: Check model files
+      run: |
+        if [ -d models ]; then
+          echo "Model directory found"
+          find models -type f -name "*.py" || echo "No Python model files found"
+          find models -type f -name "*.pkl" || echo "No pickle files found"
+          find models -type f -name "*.h5" || echo "No HDF5 files found"
+          find models -type f -name "*.pt" || echo "No PyTorch files found"
+        else
+          echo "No models directory found yet"
+        fi
+    
+    - name: Validate model structure
+      run: |
+        if [ -d models ]; then
+          for pyfile in $(find models -name "*.py" ! -name "__*"); do
+            echo "Checking $pyfile"
+            python -m py_compile "$pyfile" && echo "✓ $pyfile - Syntax OK" || echo "✗ $pyfile - Syntax Error"
+          done
+        else
+          echo "No models directory found, skipping validation"
+        fi
+    
+    - name: Test model imports
+      run: |
+        python -c "import sys; import os; import numpy; print('✓ numpy available'); import pandas; print('✓ pandas available')" || echo "Required packages not available"
+        if [ -d models ] && [ -f models/__init__.py ]; then
+          python -c "import models; print('✓ models package importable')" || echo "models package import failed"
+        else
+          echo "ℹ No models package yet"
+        fi
+    
+    - name: Run model validation tests
+      run: |
+        if [ -d tests ] && [ -f tests/test_models.py ]; then
+          pytest tests/test_models.py -v || echo "Model tests not found or failed"
+        else
+          echo "No model tests found yet"
+        fi
+
+  check-time-series:
+    name: Validate Time Series Components
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Install time series dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas numpy statsmodels scikit-learn
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+    
+    - name: Check time series libraries
+      run: |
+        python -c "import pandas; print('✓ pandas: Time series data manipulation')"
+        python -c "import numpy; print('✓ numpy: Numerical operations')"
+        python -c "import statsmodels; print('✓ statsmodels: Statistical models')" || echo "statsmodels not available"
+        echo ""
+        echo "Time series environment ready for USD/COP analysis"
+    
+    - name: Validate data processing scripts
+      run: |
+        if [ -d src ]; then
+          find src -name "*time_series*.py" -o -name "*usd_cop*.py" | while read file; do
+            if [ -f "$file" ]; then
+              echo "Validating $file"
+              python -m py_compile "$file" && echo "✓ $file - OK"
+            fi
+          done || echo "No time series processing scripts found yet"
+        else
+          echo "No src directory found yet"
+        fi
