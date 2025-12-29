@@ -19,6 +19,8 @@ jobs:
   validate-models:
     name: Validate Agentic Models
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     
     steps:
     - uses: actions/checkout@v4
@@ -79,6 +81,8 @@ jobs:
   check-time-series:
     name: Validate Time Series Components
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     
     steps:
     - uses: actions/checkout@v4
