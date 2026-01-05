@@ -1,0 +1,69 @@
+name: Daily News Analysis Pipeline
+
+on:
+  schedule:
+    # Run daily at 9 AM UTC (4 AM Colombia time)
+    - cron: '0 9 * * *'
+  workflow_dispatch:  # Allow manual triggering
+
+env:
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  run_pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Add uv to PATH
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run full pipeline
+        id: pipeline
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_BUCKET_NAME: ${{ secrets.GCP_BUCKET_NAME }}
+          LOG_LEVEL: INFO
+          MAX_ARTICLES_PER_RUN: 100
+          ENABLE_GCS_UPLOAD: false
+        run: |
+          uv run python -m src.pipeline.orchestrator full \
+            --max-articles 100 \
+            --log-level INFO
+        continue-on-error: true
+
+      - name: Upload logs as artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-logs-${{ github.run_id }}
+          path: |
+            data/gates/
+            data/processed/
+          retention-days: 7
+
+      - name: Check pipeline success
+        if: steps.pipeline.outcome == 'failure'
+        run: |
+          echo "Pipeline failed! Check logs for details."
+          exit 1
+
+      - name: Pipeline completed successfully
+        if: steps.pipeline.outcome == 'success'
+        run: |
+          echo "Pipeline completed successfully!"
